@@ -2,7 +2,7 @@
 """
 Dansk Vin Tilbud Scraper – GitHub Actions version
 Bruger Playwright (headless Chromium) til at scrape de største danske vinwebsites.
-Koerer dagligt via GitHub Actions og gemmer wine_deals.json.
+Kører dagligt via GitHub Actions og gemmer wine_deals.json.
 """
 
 import json
@@ -11,16 +11,16 @@ import os
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 
-# ── Hjaelpefunktioner ──────────────────────────────────────────────
+# ── Hjælpefunktioner ──────────────────────────────────────────────
 
 def parse_price(txt):
     if not txt:
         return None
-    m = re.search(r'([\d]+[,\.][\d]{1,2})', txt.replace('\xa0', ''))
+    m = re.search(r'([d]+[,.][d]{1,2})', txt.replace(' ', ''))
     return float(m.group(1).replace(',', '.')) if m else None
 
 def parse_quantity(txt):
-    """Udtraekker antal flasker fra strenge som 'v/12 stk.', 'Ved 6 stk.', '6 fl. pr. stk.'"""
+    """Udtrækker antal flasker fra strenge som 'v/12 stk.', 'Ved 6 stk.', '6 fl. pr. stk.'"""
     if not txt:
         return None
     m = re.search(r'(\d+)\s*(?:stk|fl)', txt)
@@ -28,53 +28,24 @@ def parse_quantity(txt):
 
 def guess_wine_type(name):
     n = name.lower()
-    if any(w in n for w in ['champagne', 'cremant', 'cava', 'prosecco', 'mousserende', 'sekt', 'sparkling']):
+    if any(w in n for w in ['champagne', 'crémant', 'cava', 'prosecco', 'mousserende', 'sekt', 'sparkling']):
         return 'mousserende'
-    if any(w in n for w in ['rose', 'rosvin']):
-        return 'rose'
+    if any(w in n for w in ['rosé', 'rosé', 'rosvin', 'rosé']):
+        return 'rosé'
     if any(w in n for w in ['chardonnay', 'riesling', 'sauvignon blanc', 'pinot gris', 'hvidvin',
-                             'gruner', 'verdejo', 'blanc', 'chenin', 'viognier', 'albarino']):
+                             'grüner', 'verdejo', 'blanc', 'chenin', 'viognier', 'albariño']):
         return 'hvidvin'
     if any(w in n for w in ['cabernet', 'merlot', 'syrah', 'shiraz', 'malbec', 'pinot noir',
                              'tempranillo', 'sangiovese', 'grenache', 'garnacha', 'monastrell',
-                             'primitivo', 'rodvin', 'nebbiolo']):
-        return 'rodvin'
+                             'primitivo', 'rødvin', 'nebbiolo']):
+        return 'rødvin'
     return 'ukendt'
 
 def title_case_da(s):
-    """Konverterer VERSALER til Title Case"""
+    """Konverterer VERSALER til Title Case (dansk-venlig)"""
     if not s:
         return s
     return s.title() if s.isupper() else s
-
-# ── Felt-mapping hjaelper ──────────────────────────────────────────
-
-def _map_field(deal, label, value):
-    """Mapper et label/value par til deal-felter."""
-    if not label or not value:
-        return
-    l = label.lower()
-    if 'land' in l:
-        if not deal.get('country'):
-            deal['country'] = value
-    elif 'omrade' in l or 'omrde' in l or 'region' in l:
-        if not deal.get('region'):
-            deal['region'] = value
-    elif 'producent' in l or 'producer' in l:
-        if not deal.get('producer'):
-            deal['producer'] = value
-    elif 'argang' in l or 'rgang' in l or 'vintage' in l:
-        if not deal.get('vintage'):
-            deal['vintage'] = value
-    elif 'drue' in l or 'grape' in l:
-        if not deal.get('grapes'):
-            deal['grapes'] = value
-    elif 'alkohol' in l or 'alcohol' in l:
-        if not deal.get('alcohol'):
-            deal['alcohol'] = value
-    elif any(x in l for x in ['storrelse', 'rrelse', 'indhold', 'flaskestr', 'volumen', 'cl', 'liter']):
-        if not deal.get('bottle_size'):
-            deal['bottle_size'] = value
 
 # ── Site-specifikke scrapere ──────────────────────────────────────
 
@@ -123,6 +94,7 @@ def scrape_andrupvin(page):
                         'bottle_size': None,
                         'scraped_at': datetime.now().isoformat(),
                     }
+                    # Hent produktside for udvidede data
                     if url_prod and url_prod.startswith('http'):
                         try:
                             page.goto(url_prod, wait_until='domcontentloaded', timeout=20000)
@@ -133,9 +105,24 @@ def scrape_andrupvin(page):
                                 for child in children:
                                     texts = [t.strip() for t in child.inner_text().split('\n') if t.strip()]
                                     if len(texts) >= 2:
-                                        _map_field(deal, texts[0], texts[1])
+                                        label = texts[0].lower()
+                                        value = texts[1]
+                                        if 'land' in label:
+                                            deal['country'] = value
+                                        elif 'region' in label or 'område' in label:
+                                            deal['region'] = value
+                                        elif 'producent' in label:
+                                            deal['producer'] = value
+                                        elif 'årgang' in label:
+                                            deal['vintage'] = value
+                                        elif 'drue' in label:
+                                            deal['grapes'] = value
+                                        elif 'alkohol' in label:
+                                            deal['alcohol'] = value
+                                        elif 'størrelse' in label or 'indhold' in label or 'flaskestr' in label:
+                                            deal['bottle_size'] = value
                             body_text = page.inner_text('body')
-                            qty_match = re.search(r'kassevis\s*[aa]\s*(\d+)\s*stk', body_text, re.IGNORECASE)
+                            qty_match = re.search(r'kassevis\s*[aáà]\s*(\d+)\s*stk', body_text, re.IGNORECASE)
                             if qty_match:
                                 deal['min_quantity'] = int(qty_match.group(1))
                             else:
@@ -153,9 +140,9 @@ def scrape_andrupvin(page):
 
 
 def scrape_jyskvin(page):
-    """JyskVin – Drupal.
-    current_price = stykpris ved bulk-kob (tilbudspris).
-    original_price = 1-flaske-prisen (normalpris).
+    """JyskVin – Drupal, <a> er produktcontainer.
+    current_price = stykpris ved køb af N flasker (bulk-pris).
+    original_price = 1-flaske-prisen (den normale pris).
     """
     deals = []
     try:
@@ -181,11 +168,13 @@ def scrape_jyskvin(page):
                 elif subhead:
                     country_raw = title_case_da(subhead)
 
-                price_highlighted = el.query_selector('.entity-teaser__price--highlighted')
-                bulk_text = price_highlighted.inner_text() if price_highlighted else ''
+                price_el = el.query_selector('.entity-teaser__price--highlighted')
+                bulk_text = price_el.inner_text() if price_el else ''
+
                 qty_el = el.query_selector('.entity-teaser__price--highlighted .entity-teaser__price__small')
                 qty_text = qty_el.inner_text() if qty_el else bulk_text
                 min_qty = parse_quantity(qty_text)
+
                 cur = parse_price(bulk_text)
 
                 old = None
@@ -227,7 +216,22 @@ def scrape_jyskvin(page):
                     for row in page.query_selector_all('.product__facts__table tr'):
                         cells = row.query_selector_all('td')
                         if len(cells) >= 2:
-                            _map_field(deal, cells[0].inner_text().strip(), cells[1].inner_text().strip())
+                            label = cells[0].inner_text().strip().lower()
+                            value = cells[1].inner_text().strip()
+                            if 'land' in label:
+                                deal['country'] = value
+                            elif 'område' in label or 'region' in label:
+                                deal['region'] = value
+                            elif 'producent' in label:
+                                deal['producer'] = value
+                            elif 'årgang' in label:
+                                deal['vintage'] = value
+                            elif 'drue' in label:
+                                deal['grapes'] = value
+                            elif 'alkohol' in label:
+                                deal['alcohol'] = value
+                            elif 'flaskestr' in label or 'størrelse' in label or 'indhold' in label:
+                                deal['bottle_size'] = value
                 except Exception as e:
                     print(f'    JyskVin produktside fejl ({full_url}): {e}')
 
@@ -239,131 +243,132 @@ def scrape_jyskvin(page):
     return deals
 
 
-def scrape_supervin(page):
-    """Supervin – Angular SPA"""
-    deals = []
-    urls = [
-        'https://www.supervin.dk/tilbud/top10',
-        'https://www.supervin.dk/tilbud/hvidvin',
-        'https://www.supervin.dk/tilbud/fransk-rodvin',
-        'https://www.supervin.dk/tilbud/italiensk-rodvin',
-        'https://www.supervin.dk/tilbud/spansk-rodvin',
-        'https://www.supervin.dk/tilbud/rose-vin',
-        'https://www.supervin.dk/udlober-snart',
+def scrape_supervin(page=None):
+    """Supervin – direkte Algolia API-kald.
+    Henter alle tilbud + udlober-snart via ét/få API-kald.
+    Ingen Playwright nødvendig – page-parameteren ignoreres.
+    Filtrerer: on_discount=1, kun vin-typer, maks 500 kr.
+    """
+    import urllib.request
+    import time
+
+    APP_ID  = '5G37W5YM1S'
+    API_KEY = 'cf4d7c9554e9ce64ed828a35704ce85d'
+    INDEX   = 'Products_dk'
+    BASE    = f'https://{APP_ID}-dsn.algolia.net/1/indexes/{INDEX}/query'
+
+    wine_types = [
+        'Rodvin', 'Hvidvin', 'Rosevin', 'Mousserende vin',
+        'Dessertvin', 'Orangevin', 'Portvin',
     ]
-    seen = set()
-    for url in urls:
-        try:
-            page.goto(url, wait_until='networkidle', timeout=25000)
-            page.wait_for_timeout(2000)
+    type_filter = ' OR '.join([f'facet_types:"{t}"' for t in wine_types])
+
+    deals = []
+    seen  = set()
+
+    queries = [
+        {'label': 'tilbud',       'filters': f'on_discount=1 AND ({type_filter}) AND price_max <= 500'},
+        {'label': 'udlober-snart','filters': f'on_discount=1 AND ({type_filter}) AND price_max <= 500 AND discount_expiration_date > 0'},
+    ]
+
+    for q in queries:
+        page_num = 0
+        while True:
             try:
-                page.click('button:has-text("Kun nodvendige")', timeout=3000)
-            except:
-                pass
-            for el in page.query_selector_all('.product-top'):
-                try:
-                    data = el.evaluate("""el => {
-                        const w = el.closest('.item') || el.parentElement?.parentElement;
-                        const name = w?.querySelector('h2,h3,h4')?.innerText?.trim() || '';
-                        const baseEl = w?.querySelector('.price.base-price');
-                        const basePrice = parseFloat((baseEl?.getAttribute('data-price') || '').replace(',', '.')) || null;
-                        const badge = w?.querySelector('[class*=badge],[class*=discount]')?.innerText?.trim() || '';
-                        const m = badge.match(/([\d,.]+)\s*DKK/);
-                        const bulk = m ? parseFloat(m[1].replace(',', '.')) : null;
-                        const disc = (bulk && basePrice && bulk < basePrice) ? Math.round((1 - bulk/basePrice)*100) : null;
-                        const link = w?.querySelector('a[href]');
-                        const url = link?.href || '';
-                        const flagImg = w?.querySelector('img[src*="country_icon"]');
-                        const country = flagImg?.getAttribute('alt') || '';
-                        let minQty = null;
-                        const labels = w?.querySelectorAll('.label') || [];
-                        for (const lbl of labels) {
-                            const t = lbl.innerText || '';
-                            const qm = t.match(/(\d+)\s*fl/);
-                            if (qm) { minQty = parseInt(qm[1]); }
-                        }
-                        return { name, basePrice, bulk, disc, url, country, minQty };
-                    }""")
-                    if not data['name'] or not data['basePrice'] or data['name'] in seen:
-                        continue
-                    seen.add(data['name'])
+                payload = json.dumps({
+                    'query': '',
+                    'hitsPerPage': 200,
+                    'page': page_num,
+                    'filters': q['filters'],
+                    'attributesToRetrieve': [
+                        'name', 'price_max', 'price_min', 'url_key',
+                        'facet_types', 'facet_country', 'facet_grape',
+                        'facet_alcohol', 'facet_region', 'facet_producer',
+                        'facet_year', 'facet_bottle_size',
+                        'discount_percentage', 'discount_expiration_date',
+                        'quantity_threshold', 'price_per_quantity',
+                    ]
+                }).encode('utf-8')
+                req = urllib.request.Request(
+                    BASE, data=payload,
+                    headers={
+                        'X-Algolia-Application-Id': APP_ID,
+                        'X-Algolia-API-Key': API_KEY,
+                        'Content-Type': 'application/json',
+                    },
+                    method='POST'
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    data = json.loads(resp.read())
+            except Exception as e:
+                print(f'  Supervin Algolia fejl ({q["label"]} side {page_num}): {e}')
+                break
 
-                    deal = {
-                        'name': data['name'][:100],
-                        'current_price': data['basePrice'],
-                        'original_price': None,
-                        'bulk_price_6': data['bulk'],
-                        'discount_pct': data['disc'],
-                        'min_quantity': data.get('minQty'),
-                        'url': data['url'],
-                        'store': 'Supervin',
-                        'store_url': 'https://www.supervin.dk',
-                        'wine_type': guess_wine_type(data['name']),
-                        'country': data.get('country') or None,
-                        'region': None, 'producer': None,
-                        'vintage': None, 'grapes': None, 'alcohol': None,
-                        'bottle_size': None,
-                        'scraped_at': datetime.now().isoformat(),
-                    }
-
-                    prod_url = data['url']
-                    if prod_url and prod_url.startswith('http'):
-                        try:
-                            page.goto(prod_url, wait_until='domcontentloaded', timeout=20000)
-                            page.wait_for_timeout(1500)
-
-                            all_data = page.evaluate("""() => {
-                                const result = {};
-                                document.querySelectorAll('.product-data-value').forEach(el => {
-                                    const prev = el.previousElementSibling;
-                                    if (prev) {
-                                        const label = (prev.innerText || prev.textContent || '').trim().toLowerCase();
-                                        const value = (el.innerText || el.textContent || '').trim();
-                                        result[label] = value;
-                                    }
-                                });
-                                return result;
-                            }""")
-                            for label, value in all_data.items():
-                                _map_field(deal, label, value)
-
-                            fra_data = page.evaluate("""() => {
-                                const els = document.querySelectorAll('*');
-                                for (const el of els) {
-                                    const t = (el.innerText || '').trim();
-                                    if (t === 'Vinen kommer fra' || t === 'Oprindelse') {
-                                        const next = el.parentElement?.nextElementSibling;
-                                        if (next) return (next.innerText || '').trim();
-                                    }
-                                }
-                                return '';
-                            }""")
-                            if fra_data:
-                                lines = [l.strip() for l in fra_data.split('\n') if l.strip()]
-                                if lines and not deal['country']:
-                                    deal['country'] = lines[0]
-                                if len(lines) > 1 and not deal['region']:
-                                    deal['region'] = ', '.join(lines[1:])
-
-                        except Exception as e:
-                            print(f'    Supervin produktside fejl ({prod_url}): {e}')
-
-                    deals.append(deal)
-                except Exception:
+            for hit in data.get('hits', []):
+                name = (hit.get('name') or '').strip()
+                if not name or name in seen:
                     continue
-        except Exception as e:
-            print(f'  Supervin fejl ({url}): {e}')
-    return deals
+                seen.add(name)
+
+                price = hit.get('price_max') or hit.get('price')
+                if not price:
+                    continue
+
+                url_key = hit.get('url_key') or ''
+                prod_url = f'https://www.supervin.dk/{url_key}' if url_key else 'https://www.supervin.dk'
+
+                disc_raw = hit.get('discount_percentage')
+                try:
+                    disc = int(float(disc_raw)) if disc_raw is not None else None
+                except Exception:
+                    disc = None
+
+                vintage = hit.get('facet_year')
+                vintage = str(int(vintage)) if vintage else None
+
+                deal = {
+                    'name': name[:100],
+                    'current_price': price,
+                    'original_price': hit.get('price_min') if hit.get('price_min') and hit.get('price_min') != price else None,
+                    'discount_pct': disc,
+                    'min_quantity': hit.get('quantity_threshold'),
+                    'url': prod_url,
+                    'store': 'Supervin',
+                    'store_url': 'https://www.supervin.dk',
+                    'wine_type': guess_wine_type(name),
+                    'country':     hit.get('facet_country') or None,
+                    'region':      hit.get('facet_region') or None,
+                    'producer':    hit.get('facet_producer') or None,
+                    'vintage':     vintage,
+                    'grapes':      hit.get('facet_grape') or None,
+                    'alcohol':     hit.get('facet_alcohol') or None,
+                    'bottle_size': hit.get('facet_bottle_size') or None,
+                    'scraped_at':  datetime.now().isoformat(),
+                }
+                deals.append(deal)
+
+            if page_num >= data.get('nbPages', 1) - 1:
+                break
+            page_num += 1
+
+    # Fjern duplikater (de to queries overlapper)
+    seen2 = set()
+    unique = []
+    for d in deals:
+        if d['name'] not in seen2:
+            seen2.add(d['name'])
+            unique.append(d)
+    return unique
 
 
 def scrape_vildmedvin(page):
-    """VildMedVin – Vue.js, maengerabat"""
+    """VildMedVin – Vue.js, mængderabat"""
     deals = []
     try:
         page.goto('https://www.vildmedvin.dk/tilbud/vin-tilbud', wait_until='domcontentloaded', timeout=20000)
         page.wait_for_timeout(3000)
         try:
-            page.click('button:has-text("Vaelg alle")', timeout=3000)
+            page.click('button:has-text("Vælg alle")', timeout=3000)
         except:
             pass
         for el in page.query_selector_all('.product-item'):
@@ -393,9 +398,9 @@ def scrape_vildmedvin(page):
 
                 if not bulk_price and single_price and bulk_qty:
                     disc_el = el.query_selector('.saving-price .price')
-                    disc_pct_raw = int(re.sub(r'[^\d]', '', disc_el.inner_text())) if disc_el else None
-                    if disc_pct_raw:
-                        bulk_price = round(single_price * (1 - disc_pct_raw/100), 2)
+                    disc_pct = int(re.sub(r'[^\d]', '', disc_el.inner_text())) if disc_el else None
+                    if disc_pct:
+                        bulk_price = round(single_price * (1 - disc_pct/100), 2)
 
                 disc = round((1 - bulk_price/single_price)*100) if (bulk_price and single_price and single_price > bulk_price) else None
 
@@ -422,21 +427,21 @@ def scrape_vildmedvin(page):
                     try:
                         page.goto(prod_url, wait_until='domcontentloaded', timeout=20000)
                         page.wait_for_timeout(2000)
-                        facts = page.evaluate("""() => {
+                        facts = page.evaluate('''() => {
                             const result = {};
-                            document.querySelectorAll('.name').forEach(el => {
-                                const label = (el.innerText || '').trim().replace(/:$/, '').toLowerCase();
+                            document.querySelectorAll(".name").forEach(el => {
+                                const label = (el.innerText || "").trim().replace(/:$/, "").toLowerCase();
                                 const parent = el.parentElement;
                                 if (parent) {
                                     const next = parent.nextElementSibling;
                                     if (next) {
-                                        const value = (next.innerText || '').trim();
+                                        const value = (next.innerText || "").trim();
                                         result[label] = value;
                                     }
                                 }
                             });
                             return result;
-                        }""")
+                        }''')
                         for label, value in facts.items():
                             _map_field(deal, label, value)
                     except Exception as e:
@@ -448,6 +453,36 @@ def scrape_vildmedvin(page):
     except Exception as e:
         print(f'  VildMedVin fejl: {e}')
     return deals
+
+
+# ── Felt-mapping hjælper ──────────────────────────────────────────
+
+def _map_field(deal, label, value):
+    """Mapper et label/value par til deal-felter."""
+    if not label or not value:
+        return
+    l = label.lower()
+    if 'land' in l:
+        if not deal.get('country'):
+            deal['country'] = value
+    elif 'område' in l or 'region' in l:
+        if not deal.get('region'):
+            deal['region'] = value
+    elif 'producent' in l or 'producer' in l:
+        if not deal.get('producer'):
+            deal['producer'] = value
+    elif 'årgang' in l or 'vintage' in l:
+        if not deal.get('vintage'):
+            deal['vintage'] = value
+    elif 'drue' in l or 'grape' in l:
+        if not deal.get('grapes'):
+            deal['grapes'] = value
+    elif 'alkohol' in l or 'alcohol' in l:
+        if not deal.get('alcohol'):
+            deal['alcohol'] = value
+    elif any(x in l for x in ['størrelse', 'indhold', 'flaskestr', 'volumen', 'cl', 'liter']):
+        if not deal.get('bottle_size'):
+            deal['bottle_size'] = value
 
 
 # ── Hovedfunktion ─────────────────────────────────────────────────
@@ -477,10 +512,11 @@ def main():
             deals = fn(page)
             all_deals.extend(deals)
             stats.append({'store': name, 'deals_found': len(deals)})
-            print(f'  -> {len(deals)} tilbud fra {name}')
+            print(f'  → {len(deals)} tilbud fra {name}')
 
         browser.close()
 
+    # Sorter: højeste rabat øverst
     all_deals.sort(key=lambda d: (-(d.get('discount_pct') or 0), d.get('current_price', 9999)))
 
     output = {
@@ -494,7 +530,7 @@ def main():
     with open('wine_deals.json', 'w', encoding='utf-8') as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
 
-    print(f'\n Gemt {len(all_deals)} tilbud til wine_deals.json')
+    print(f'\n✓ Gemt {len(all_deals)} tilbud til wine_deals.json')
     for s in stats:
         print(f'  {s["store"]}: {s["deals_found"]}')
 
