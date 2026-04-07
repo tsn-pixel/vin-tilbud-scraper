@@ -2,7 +2,7 @@
 """
 Dansk Vin Tilbud Scraper – GitHub Actions version
 Bruger Playwright (headless Chromium) til at scrape de største danske vinwebsites.
-Kører dagligt via GitHub Actions og gemmer wine_deals.json.
+Koerer dagligt via GitHub Actions og gemmer wine_deals.json.
 """
 
 import json
@@ -11,7 +11,7 @@ import os
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 
-# ── Hjælpefunktioner ──────────────────────────────────────────────
+# ── Hjaelpefunktioner ──────────────────────────────────────────────
 
 def parse_price(txt):
     if not txt:
@@ -20,7 +20,7 @@ def parse_price(txt):
     return float(m.group(1).replace(',', '.')) if m else None
 
 def parse_quantity(txt):
-    """Udtrækker antal flasker fra strenge som 'v/12 stk.', 'Ved 6 stk.', '6 fl. pr. stk.'"""
+    """Udtraekker antal flasker fra strenge som 'v/12 stk.', 'Ved 6 stk.', '6 fl. pr. stk.'"""
     if not txt:
         return None
     m = re.search(r'(\d+)\s*(?:stk|fl)', txt)
@@ -47,7 +47,7 @@ def title_case_da(s):
         return s
     return s.title() if s.isupper() else s
 
-# ── Felt-mapping hjælper ──────────────────────────────────────────
+# ── Felt-mapping hjaelper ──────────────────────────────────────────
 
 def _map_field(deal, label, value):
     """Mapper et label/value par til deal-felter."""
@@ -249,6 +249,7 @@ def scrape_supervin(page):
         'https://www.supervin.dk/tilbud/italiensk-rodvin',
         'https://www.supervin.dk/tilbud/spansk-rodvin',
         'https://www.supervin.dk/tilbud/rose-vin',
+        'https://www.supervin.dk/udlober-snart',
     ]
     seen = set()
     for url in urls:
@@ -356,10 +357,10 @@ def scrape_supervin(page):
 
 
 def scrape_vildmedvin(page):
-    """VildMedVin – Vue.js, mængerabat"""
+    """VildMedVin – Vue.js, maengerabat"""
     deals = []
     try:
-        page.goto('https://www.vildmedvin.dk/tilbud', wait_until='domcontentloaded', timeout=20000)
+        page.goto('https://www.vildmedvin.dk/tilbud/vin-tilbud', wait_until='domcontentloaded', timeout=20000)
         page.wait_for_timeout(3000)
         try:
             page.click('button:has-text("Vaelg alle")', timeout=3000)
